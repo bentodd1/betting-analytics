@@ -1,0 +1,590 @@
+Perfect! Here's a comprehensive overview you can paste into Claude Code to guide the implementation:
+
+---
+
+# Sports Betting Analytics Platform - Implementation Guide
+
+## Project Overview
+Build an AI-powered sports betting analytics platform that ingests historical and real-time odds data, tracks outcomes, and provides natural language querying through an LLM interface.
+
+## Tech Stack
+- **Database**: PostgreSQL (local development, then Azure)
+- **Backend**: Python 3.11+
+- **Jobs/Scheduling**: Python scripts (local), Azure Functions (production)
+- **UI**: Streamlit
+- **LLM**: Claude API (Anthropic) or OpenAI
+- **Data Source**: The Odds API
+- **Tools**: Azure Data Studio for database management
+
+## Project Structure
+```
+betting-analytics/
+├── .env                          # Environment variables
+├── requirements.txt              # Python dependencies
+├── README.md
+│
+├── database/
+│   ├── schema.sql               # Database schema
+│   ├── db_connection.py         # Database utilities
+│   └── migrations/              # Schema changes
+│
+├── jobs/
+│   ├── fetch_historical_odds.py # Job 1: Load historical odds
+│   ├── fetch_scores.py          # Job 2: Update game scores
+│   ├── determine_winners.py     # Job 3: Calculate bet outcomes
+│   ├── fetch_realtime_odds.py   # Job 4: Real-time odds updates
+│   └── utils/
+│       ├── odds_api_client.py   # API wrapper
+│       └── helpers.py
+│
+├── query_engine/
+│   ├── llm_query_generator.py   # Natural language → SQL
+│   ├── response_formatter.py    # Results → Insights
+│   └── prompts.py               # LLM prompt templates
+│
+├── streamlit_app.py             # Main Streamlit application
+│
+└── tests/
+    └── test_*.py                # Unit tests
+```
+
+## Phase 1: Database Setup & Historical Data Ingestion
+
+### Database Schema
+```sql
+-- Core tables needed:
+
+CREATE TABLE sports (
+    sport_id SERIAL PRIMARY KEY,
+    sport_key VARCHAR(50) UNIQUE NOT NULL,
+    sport_title VARCHAR(100) NOT NULL
+);
+
+CREATE TABLE teams (
+    team_id SERIAL PRIMARY KEY,
+    team_name VARCHAR(100) UNIQUE NOT NULL,
+    sport_id INTEGER REFERENCES sports(sport_id)
+);
+
+CREATE TABLE games (
+    game_id VARCHAR(100) PRIMARY KEY,
+    sport_id INTEGER REFERENCES sports(sport_id),
+    commence_time TIMESTAMP NOT NULL,
+    home_team_id INTEGER REFERENCES teams(team_id),
+    away_team_id INTEGER REFERENCES teams(team_id),
+    home_score INTEGER,
+    away_score INTEGER,
+    status VARCHAR(20) DEFAULT 'scheduled', -- scheduled, in_progress, completed
+    completed_at TIMESTAMP,
+    raw_data JSONB
+);
+
+CREATE TABLE bookmakers (
+    bookmaker_id SERIAL PRIMARY KEY,
+    bookmaker_key VARCHAR(50) UNIQUE NOT NULL,
+    bookmaker_title VARCHAR(100) NOT NULL
+);
+
+CREATE TABLE odds (
+    odds_id SERIAL PRIMARY KEY,
+    game_id VARCHAR(100) REFERENCES games(game_id),
+    bookmaker_id INTEGER REFERENCES bookmakers(bookmaker_id),
+    market_key VARCHAR(50) NOT NULL, -- h2h (moneyline), spreads, totals
+    outcome_name VARCHAR(100),       -- team name or over/under
+    price DECIMAL(10,2),             -- American odds (e.g., -110, +150)
+    point DECIMAL(10,2),             -- Spread/total line (e.g., -3.5, 215.5)
+    fetched_at TIMESTAMP DEFAULT NOW(),
+    is_latest BOOLEAN DEFAULT TRUE,  -- Track current vs historical
+    raw_data JSONB
+);
+
+CREATE TABLE bet_outcomes (
+    outcome_id SERIAL PRIMARY KEY,
+    odds_id INTEGER REFERENCES odds(odds_id),
+    game_id VARCHAR(100) REFERENCES games(game_id),
+    bet_type VARCHAR(50),            -- moneyline, spread, total_over, total_under
+    bet_outcome VARCHAR(20),         -- win, loss, push
+    calculated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Indexes for performance
+CREATE INDEX idx_odds_game ON odds(game_id);
+CREATE INDEX idx_odds_bookmaker ON odds(bookmaker_id);
+CREATE INDEX idx_odds_fetched ON odds(fetched_at);
+CREATE INDEX idx_games_commence ON games(commence_time);
+CREATE INDEX idx_games_status ON games(status);
+```
+
+### Job 1: Fetch Historical Odds
+**File**: `jobs/fetch_historical_odds.py`
+
+**Requirements**:
+- Fetch historical odds data from The Odds API (last 90 days recommended)
+- Support multiple sports: NFL, NBA, MLB, NHL, etc.
+- Store both raw JSON and normalized data
+- Handle rate limiting (API typically allows 500 requests/month on free tier)
+- Implement incremental loading (avoid duplicate data)
+
+**Key Functions**:
+```python
+def fetch_historical_odds(sport_key, start_date, end_date):
+    """Fetch historical odds for a date range"""
+    pass
+
+def save_game(game_data):
+    """Insert or update game record"""
+    pass
+
+def save_odds(odds_data, game_id):
+    """Insert odds records for a game"""
+    pass
+
+def main():
+    """Main execution: load historical data for all sports"""
+    pass
+```
+
+**API Endpoints to Use**:
+- Historical odds: `GET /v4/historical/sports/{sport}/odds`
+- Sports list: `GET /v4/sports`
+
+### Job 2: Fetch Scores
+**File**: `jobs/fetch_scores.py`
+
+**Requirements**:
+- Update game records with final scores
+- Mark games as completed
+- Handle games in progress (optional for Phase 1)
+- Run daily to capture completed games
+
+**Key Functions**:
+```python
+def fetch_scores_for_sport(sport_key):
+    """Get scores from The Odds API scores endpoint"""
+    pass
+
+def update_game_scores(game_id, home_score, away_score):
+    """Update game with final scores"""
+    pass
+
+def mark_game_completed(game_id):
+    """Mark game status as completed"""
+    pass
+```
+
+**API Endpoint**:
+- Scores: `GET /v4/sports/{sport}/scores`
+
+### Job 3: Determine Bet Outcomes
+**File**: `jobs/determine_winners.py`
+
+**Requirements**:
+- For completed games, calculate which bets won/lost
+- Handle moneyline, spreads, and totals
+- Account for pushes (tie in spread betting)
+- Store results in bet_outcomes table
+
+**Key Logic**:
+```python
+def calculate_moneyline_outcome(game_id):
+    """Determine moneyline winners"""
+    # If home_score > away_score, home_team moneyline wins
+    pass
+
+def calculate_spread_outcome(game_id, spread_line):
+    """Determine spread bet outcomes"""
+    # Apply spread to favored team, check if they cover
+    pass
+
+def calculate_total_outcome(game_id, total_line):
+    """Determine over/under outcomes"""
+    # Compare combined score to total line
+    pass
+
+def process_completed_games():
+    """Main function: process all completed games without outcomes"""
+    pass
+```
+
+**Calculation Examples**:
+- Moneyline: Lakers 110, Celtics 105 → Lakers moneyline wins
+- Spread: Lakers -3.5, Final: Lakers 110-105 → Lakers by 5, spread wins
+- Total: O/U 215.5, Final: 110-105 (215 total) → Under wins
+
+## Phase 2: Streamlit Application
+
+### Basic Streamlit App
+**File**: `streamlit_app.py`
+
+**Features**:
+```python
+import streamlit as st
+import pandas as pd
+import plotly.express as px
+
+# Page config
+st.set_page_config(page_title="Betting Analytics", layout="wide")
+
+# Sidebar navigation
+page = st.sidebar.selectbox("Navigation", [
+    "📊 Dashboard",
+    "💬 Ask Questions",
+    "📈 Reports",
+    "⚙️ Data Status"
+])
+
+if page == "📊 Dashboard":
+    # Show key metrics and visualizations
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Total Games", "1,234")
+    with col2:
+        st.metric("Bookmakers Tracked", "8")
+    with col3:
+        st.metric("Avg Line Movement", "2.3 pts")
+    
+    # Visualizations
+    # - Line movement over time
+    # - Bookmaker comparison
+    # - Win rate by bet type
+
+elif page == "💬 Ask Questions":
+    # LLM query interface (Phase 3)
+    pass
+
+elif page == "📈 Reports":
+    # Pre-built reports
+    # - Daily line movement summary
+    # - Bookmaker accuracy comparison
+    # - Best value bets
+    pass
+
+elif page == "⚙️ Data Status":
+    # Show data freshness, row counts, last update times
+    pass
+```
+
+**Initial Visualizations**:
+1. Line movement charts (Plotly line charts)
+2. Bookmaker odds comparison (bar charts)
+3. Win rate heatmaps (by sport, bookmaker, bet type)
+4. Volume metrics (games per day, odds updates)
+
+## Phase 3: LLM Integration
+
+### Query Engine
+**File**: `query_engine/llm_query_generator.py`
+
+**Requirements**:
+- Convert natural language questions to SQL
+- Provide database schema context to LLM
+- Validate generated SQL before execution
+- Handle errors gracefully
+
+**Implementation**:
+```python
+from anthropic import Anthropic
+
+class QueryEngine:
+    def __init__(self):
+        self.client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        self.schema_context = self.load_schema_context()
+    
+    def generate_sql(self, user_question):
+        """Convert natural language to SQL"""
+        prompt = f"""
+        Given this database schema:
+        {self.schema_context}
+        
+        Generate a PostgreSQL query to answer: {user_question}
+        
+        Return only the SQL query, no explanation.
+        """
+        
+        response = self.client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=1024,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        
+        return response.content[0].text
+    
+    def execute_query(self, sql):
+        """Execute SQL and return results"""
+        # Add safety checks, timeouts
+        pass
+    
+    def format_response(self, user_question, results):
+        """Convert results to natural language insights"""
+        pass
+```
+
+**Example Questions to Support**:
+- "Which bookmaker had the most accurate closing lines last week?"
+- "Show me line movements for Lakers games in December"
+- "What's the average line movement 2 hours before game time?"
+- "Compare DraftKings vs FanDuel accuracy for NBA spreads"
+- "Which teams have the most volatile betting lines?"
+
+### Streamlit LLM Interface
+```python
+# In streamlit_app.py, "Ask Questions" page
+st.title("💬 Ask About Your Betting Data")
+
+user_question = st.text_input("What would you like to know?")
+
+if user_question:
+    with st.spinner("Analyzing data..."):
+        # Generate SQL
+        sql = query_engine.generate_sql(user_question)
+        
+        # Show generated SQL (expandable)
+        with st.expander("View Generated SQL"):
+            st.code(sql, language="sql")
+        
+        # Execute query
+        results = query_engine.execute_query(sql)
+        
+        # Display results
+        st.dataframe(results)
+        
+        # Generate insights
+        insights = query_engine.format_response(user_question, results)
+        st.write(insights)
+        
+        # Auto-generate visualizations if appropriate
+        if len(results) > 0:
+            # Determine chart type based on data
+            st.plotly_chart(create_auto_chart(results))
+```
+
+## Phase 4: Real-Time Data Collection
+
+### Job 4: Real-Time Odds Updates
+**File**: `jobs/fetch_realtime_odds.py`
+
+**Requirements**:
+- Fetch current odds for upcoming games
+- Track line movements (odds changes over time)
+- Mark previous odds as historical (is_latest = FALSE)
+- Run every 15-60 minutes
+
+**Key Functions**:
+```python
+def fetch_live_odds(sport_key):
+    """Get current odds for upcoming games"""
+    pass
+
+def detect_line_movement(game_id, bookmaker_id, new_odds):
+    """Compare new odds to previous, detect significant changes"""
+    pass
+
+def update_odds_history(odds_id):
+    """Mark old odds as historical"""
+    pass
+
+def alert_significant_movement(game_id, movement_amount):
+    """Alert on major line movements (optional)"""
+    pass
+```
+
+**API Endpoint**:
+- Live odds: `GET /v4/sports/{sport}/odds`
+
+### Scheduling (Local Development)
+**File**: `run_scheduler.py`
+```python
+import schedule
+import time
+
+# Schedule jobs
+schedule.every(1).hours.do(fetch_realtime_odds)
+schedule.every(1).days.at("06:00").do(fetch_scores)
+schedule.every(1).days.at("07:00").do(determine_winners)
+
+print("Scheduler running...")
+while True:
+    schedule.run_pending()
+    time.sleep(60)
+```
+
+### Production Deployment (Azure Functions)
+**File**: `function_app.py`
+```python
+import azure.functions as func
+from jobs.fetch_realtime_odds import fetch_live_odds
+from jobs.fetch_scores import update_scores
+from jobs.determine_winners import calculate_outcomes
+
+app = func.FunctionApp()
+
+@app.schedule(schedule="0 */1 * * *", arg_name="timer")  # Every hour
+def update_odds(timer: func.TimerRequest):
+    fetch_live_odds()
+
+@app.schedule(schedule="0 6 * * *", arg_name="timer")  # Daily 6 AM
+def update_scores(timer: func.TimerRequest):
+    update_scores()
+
+@app.schedule(schedule="0 7 * * *", arg_name="timer")  # Daily 7 AM
+def calculate_outcomes(timer: func.TimerRequest):
+    calculate_outcomes()
+```
+
+## Environment Variables (.env)
+```bash
+# Database
+DATABASE_URL=postgresql://postgres:password@localhost:5432/betting_analytics
+
+# APIs
+ODDS_API_KEY=your_odds_api_key_here
+ANTHROPIC_API_KEY=your_anthropic_api_key_here
+# or
+OPENAI_API_KEY=your_openai_api_key_here
+
+# Azure (for production)
+AZURE_POSTGRESQL_HOST=your-server.postgres.database.azure.com
+AZURE_POSTGRESQL_DB=betting_analytics
+AZURE_POSTGRESQL_USER=your_user
+AZURE_POSTGRESQL_PASSWORD=your_password
+```
+
+## Dependencies (requirements.txt)
+```
+# Core
+python-dotenv==1.0.0
+psycopg2-binary==2.9.9
+pandas==2.1.4
+requests==2.31.0
+
+# Streamlit
+streamlit==1.29.0
+plotly==5.18.0
+
+# LLM
+anthropic==0.25.0
+# or openai==1.12.0
+
+# Scheduling (local)
+schedule==1.2.0
+
+# Azure (production)
+azure-functions==1.18.0
+azure-identity==1.15.0
+
+# Testing
+pytest==7.4.3
+```
+
+## Implementation Order
+
+### Week 1: Foundation
+1. Set up local PostgreSQL database
+2. Create schema (database/schema.sql)
+3. Build database connection utilities
+4. Implement Job 1: Historical odds ingestion
+5. Test with one sport (e.g., NBA)
+
+### Week 2: Data Pipeline
+6. Implement Job 2: Score fetching
+7. Implement Job 3: Bet outcome calculation
+8. Verify data pipeline works end-to-end
+9. Backfill 30-90 days of historical data
+
+### Week 3: Streamlit UI
+10. Build basic Streamlit app structure
+11. Create dashboard with key metrics
+12. Add basic visualizations (line charts, tables)
+13. Build data status/monitoring page
+
+### Week 4: LLM Integration
+14. Implement query generation (natural language → SQL)
+15. Build chat interface in Streamlit
+16. Add response formatting (SQL results → insights)
+17. Test with various question types
+
+### Week 5: Real-Time & Production
+18. Implement Job 4: Real-time odds updates
+19. Set up local scheduler for testing
+20. Deploy to Azure (PostgreSQL + Functions)
+21. Configure production monitoring
+
+## Key Considerations
+
+### Data Quality
+- Validate API responses before inserting
+- Handle missing/null values gracefully
+- Implement data freshness checks
+- Log all API errors for debugging
+
+### Performance
+- Index frequently queried columns
+- Use JSONB for flexible storage + fast queries
+- Limit LLM-generated queries (add LIMIT clause)
+- Cache common queries in Streamlit
+
+### Security
+- Never commit API keys (use .env)
+- Use Azure Key Vault in production
+- Validate/sanitize all LLM-generated SQL
+- Implement query timeouts
+
+### Cost Management
+- Monitor Odds API request count (free tier: 500/month)
+- Track LLM API usage
+- Optimize Azure Functions (use consumption plan)
+- Set up Azure cost alerts
+
+### Testing
+- Unit tests for each job function
+- Test LLM query generation with edge cases
+- Validate bet outcome calculations
+- Test with various sports/scenarios
+
+## Success Metrics
+- ✅ Historical data loaded (30+ days, multiple sports)
+- ✅ Daily scores updating automatically
+- ✅ Bet outcomes calculated correctly (>95% accuracy)
+- ✅ Streamlit app responsive (<2s load time)
+- ✅ LLM answers questions correctly (>90% useful responses)
+- ✅ Real-time odds updating hourly
+- ✅ Total cost <$100/month in production
+
+## Next Steps After MVP
+- Add more sports/leagues
+- Implement alerting (Discord/Slack/email for line movements)
+- Add user authentication (multiple users)
+- Build API for external access
+- Add machine learning predictions
+- Create mobile-responsive design
+- Implement data export features
+
+---
+
+## Quick Start Commands
+
+```bash
+# 1. Setup
+createdb betting_analytics
+psql betting_analytics < database/schema.sql
+
+# 2. Install dependencies
+pip install -r requirements.txt
+
+# 3. Configure environment
+cp .env.example .env
+# Edit .env with your API keys
+
+# 4. Load historical data
+python jobs/fetch_historical_odds.py
+
+# 5. Run Streamlit
+streamlit run streamlit_app.py
+
+# 6. Start scheduler (for ongoing updates)
+python run_scheduler.py
+```
+
+---
+
+This overview provides everything needed to build the complete system. Start with Phase 1, validate each component, then progress through each phase. The architecture is designed to scale from local development to production Azure deployment seamlessly.

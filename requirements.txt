@@ -1,0 +1,29 @@
+# Core dependencies
+python-dotenv==1.0.0
+psycopg2-binary==2.9.9
+pandas==2.1.4
+requests==2.31.0
+
+# Database utilities
+sqlalchemy==2.0.23
+
+# Date/time handling
+python-dateutil==2.8.2
+
+# Streamlit (enabled for Docker)
+streamlit==1.29.0
+plotly==5.18.0
+
+# LLM APIs
+# anthropic==0.25.0
+# openai==1.12.0
+
+# Scheduling (for local development)
+# schedule==1.2.0
+
+# Azure (for production)
+# azure-functions==1.18.0
+# azure-identity==1.15.0
+
+# Testing
+# pytest==7.4.3
