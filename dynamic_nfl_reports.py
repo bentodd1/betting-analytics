@@ -14,6 +14,10 @@ from typing import Dict, List, Optional, Any
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from anthropic import Anthropic
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Add database module to path
 sys.path.append(os.path.join(os.path.dirname(__file__), 'database'))
@@ -208,32 +212,40 @@ class NFLReportsApp:
                 "query": "Show me the latest spreads for all games this week with team names and bookmaker names"
             },
             {
-                "title": "Line Movements",
-                "query": "Show me games where the spread has moved more than 1 point with DraftKings or FanDuel"
+                "title": "Spread Outcomes Analysis",
+                "query": "Show me completed games with scores, spreads, and whether the favorite covered"
             },
             {
-                "title": "Arbitrage Opportunities",
-                "query": "Find games where different bookmakers have significantly different spreads for the same game"
+                "title": "Best Betting Lines",
+                "query": "Find games where the spread was way off - show games with biggest margin vs spread difference"
             },
             {
-                "title": "Completed Games Analysis",
-                "query": "Show me completed games from last week with final scores and spread results"
+                "title": "Team ATS Performance",
+                "query": "Show me how each team has performed against the spread this season with win percentages"
             },
             {
-                "title": "Bookmaker Comparison",
-                "query": "Compare spreads between DraftKings and FanDuel for upcoming games"
+                "title": "Bookmaker Accuracy",
+                "query": "Compare DraftKings vs FanDuel spread accuracy - which bookmaker sets better lines"
             },
             {
-                "title": "High Scoring Games",
-                "query": "Show me games with totals over 50 points and their over/under lines"
+                "title": "Upset Alert Games",
+                "query": "Show me games where the underdog won outright against the spread"
             },
             {
-                "title": "Recent Line Updates",
-                "query": "Show me the most recent spread updates in the last 24 hours"
+                "title": "Push Games Analysis",
+                "query": "Find games that ended exactly on the spread (pushes) and which bookmakers had them"
             },
             {
-                "title": "Team Performance",
-                "query": "Show me how the Chiefs have performed against the spread this season"
+                "title": "High Scoring Covers",
+                "query": "Show games with totals over 50 points and whether the over/under hit"
+            },
+            {
+                "title": "Recent Game Outcomes",
+                "query": "Show me the most recent completed games with scores and spread results"
+            },
+            {
+                "title": "Line Movement Winners",
+                "query": "Find games where significant line movement indicated the right side to bet"
             }
         ]
     
