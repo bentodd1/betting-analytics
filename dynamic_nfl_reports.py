@@ -287,6 +287,259 @@ class NFLReportsApp:
             
         except Exception as e:
             return f"Error generating insights: {str(e)}"
+    
+    def smart_chart_selection(self, df: pd.DataFrame) -> dict:
+        """Smart chart selection based on data structure without API calls"""
+        if df.empty:
+            return {"error": "No data available for visualization"}
+        
+        # Analyze the data structure with more flexible detection
+        numeric_cols = df.select_dtypes(include=['int64', 'float64', 'int32', 'float32', 'number']).columns.tolist()
+        categorical_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
+        datetime_cols = df.select_dtypes(include=['datetime64']).columns.tolist()
+        
+        # Try to detect numeric columns that are stored as objects
+        for col in df.columns:
+            if col not in numeric_cols and df[col].dtype == 'object':
+                try:
+                    sample_vals = df[col].dropna().head(10)
+                    if len(sample_vals) > 0:
+                        pd.to_numeric(sample_vals, errors='raise')
+                        numeric_cols.append(col)
+                        if col in categorical_cols:
+                            categorical_cols.remove(col)
+                except:
+                    pass
+        
+        # Smart chart selection logic
+        if datetime_cols and numeric_cols:
+            return {
+                "chart_type": "line_chart",
+                "x_column": datetime_cols[0],
+                "y_column": numeric_cols[0],
+                "color_column": categorical_cols[0] if categorical_cols else None,
+                "title": f"{numeric_cols[0]} over Time",
+                "reasoning": "Time series data detected - showing trend over time"
+            }
+        elif categorical_cols and numeric_cols:
+            return {
+                "chart_type": "bar_chart", 
+                "x_column": categorical_cols[0],
+                "y_column": numeric_cols[0],
+                "color_column": None,
+                "title": f"{numeric_cols[0]} by {categorical_cols[0]}",
+                "reasoning": "Categorical data with numeric values - showing comparison"
+            }
+        elif len(numeric_cols) >= 2:
+            return {
+                "chart_type": "scatter_chart",
+                "x_column": numeric_cols[0], 
+                "y_column": numeric_cols[1],
+                "color_column": categorical_cols[0] if categorical_cols else None,
+                "title": f"{numeric_cols[1]} vs {numeric_cols[0]}",
+                "reasoning": "Multiple numeric columns - showing correlation"
+            }
+        elif numeric_cols:
+            # Single numeric column - use first available categorical or index
+            x_col = categorical_cols[0] if categorical_cols else df.columns[0]
+            return {
+                "chart_type": "bar_chart",
+                "x_column": x_col,
+                "y_column": numeric_cols[0],
+                "color_column": None,
+                "title": f"{numeric_cols[0]} Distribution",
+                "reasoning": "Single numeric column - showing distribution"
+            }
+        else:
+            return {"error": "Unable to determine appropriate visualization - no numeric data found"}
+    
+    def generate_streamlit_visualization(self, df: pd.DataFrame, query: str) -> dict:
+        """Generate appropriate Streamlit visualization based on data and query"""
+        if df.empty:
+            return {"error": "No data available for visualization"}
+        
+        # Analyze the data structure with more flexible detection
+        numeric_cols = df.select_dtypes(include=['int64', 'float64', 'int32', 'float32', 'number']).columns.tolist()
+        categorical_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
+        datetime_cols = df.select_dtypes(include=['datetime64']).columns.tolist()
+        
+        # Try to detect numeric columns that are stored as objects
+        for col in df.columns:
+            if col not in numeric_cols and df[col].dtype == 'object':
+                try:
+                    # Try to convert a sample to see if it's numeric
+                    sample_vals = df[col].dropna().head(10)
+                    if len(sample_vals) > 0:
+                        pd.to_numeric(sample_vals, errors='raise')
+                        numeric_cols.append(col)
+                        if col in categorical_cols:
+                            categorical_cols.remove(col)
+                except:
+                    pass
+        
+        # Get column info for Claude analysis
+        columns_info = []
+        for col in df.columns:
+            col_type = str(df[col].dtype)
+            sample_values = df[col].dropna().head(3).tolist()
+            columns_info.append(f"{col} ({col_type}): {sample_values}")
+        
+        data_sample = df.head(5).to_string()
+        
+        if not self.claude:
+            # Fallback logic without Claude
+            return self._create_default_visualization(df, numeric_cols, categorical_cols, datetime_cols)
+        
+        prompt = f"""
+        Recommend the best Streamlit visualization for this NFL betting data. Choose from these options:
+        - line_chart: for trends over time
+        - bar_chart: for comparing categories
+        - area_chart: for cumulative data over time  
+        - scatter_chart: for correlations between variables
+        - map: for geographic data
+        
+        Original Query: {query}
+        Data Shape: {df.shape[0]} rows, {df.shape[1]} columns
+        
+        Available Columns:
+        - Numeric: {numeric_cols}
+        - Categorical: {categorical_cols} 
+        - DateTime: {datetime_cols}
+        
+        Columns Details:
+        {chr(10).join(columns_info)}
+        
+        Data Sample:
+        {data_sample}
+        
+        Respond with ONLY a JSON object like:
+        {{
+            "chart_type": "line_chart",
+            "x_column": "column_name",
+            "y_column": "column_name", 
+            "color_column": "column_name_or_null",
+            "title": "Chart Title",
+            "reasoning": "Why this chart type is best"
+        }}
+        """
+        
+        try:
+            response = self.claude.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=500,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            
+            response_text = response.content[0].text.strip()
+            
+            # Clean up JSON response
+            if response_text.startswith("```json"):
+                response_text = response_text[7:]
+            elif response_text.startswith("```"):
+                response_text = response_text[3:]
+            if response_text.endswith("```"):
+                response_text = response_text[:-3]
+            
+            viz_config = json.loads(response_text.strip())
+            return viz_config
+            
+        except Exception as e:
+            # Fallback to default logic
+            return self._create_default_visualization(df, numeric_cols, categorical_cols, datetime_cols)
+    
+    def _create_default_visualization(self, df: pd.DataFrame, numeric_cols: list, categorical_cols: list, datetime_cols: list) -> dict:
+        """Create default visualization when Claude is not available"""
+        if datetime_cols and numeric_cols:
+            return {
+                "chart_type": "line_chart",
+                "x_column": datetime_cols[0],
+                "y_column": numeric_cols[0],
+                "color_column": categorical_cols[0] if categorical_cols else None,
+                "title": f"{numeric_cols[0]} over {datetime_cols[0]}",
+                "reasoning": "Time series data detected"
+            }
+        elif categorical_cols and numeric_cols:
+            return {
+                "chart_type": "bar_chart", 
+                "x_column": categorical_cols[0],
+                "y_column": numeric_cols[0],
+                "color_column": None,
+                "title": f"{numeric_cols[0]} by {categorical_cols[0]}",
+                "reasoning": "Categorical vs numeric data"
+            }
+        elif len(numeric_cols) >= 2:
+            return {
+                "chart_type": "scatter_chart",
+                "x_column": numeric_cols[0], 
+                "y_column": numeric_cols[1],
+                "color_column": categorical_cols[0] if categorical_cols else None,
+                "title": f"{numeric_cols[1]} vs {numeric_cols[0]}",
+                "reasoning": "Multiple numeric columns for correlation"
+            }
+        else:
+            return {"error": "Unable to determine appropriate visualization"}
+    
+    def render_streamlit_chart(self, df: pd.DataFrame, viz_config: dict):
+        """Render the chart using Streamlit's native functions"""
+        try:
+            chart_type = viz_config.get("chart_type")
+            x_col = viz_config.get("x_column")
+            y_col = viz_config.get("y_column") 
+            color_col = viz_config.get("color_column")
+            title = viz_config.get("title", "Chart")
+            
+            st.write(f"**{title}**")
+            
+            # Debug info
+            st.write(f"Chart type: {chart_type}, X: {x_col}, Y: {y_col}")
+            
+            # Prepare the data
+            chart_data = df.copy()
+            
+            # Drop rows with null values in key columns
+            if x_col and y_col:
+                chart_data = chart_data.dropna(subset=[x_col, y_col])
+            
+            if chart_data.empty:
+                st.warning("No data available after removing null values")
+                return False
+            
+            if chart_type == "line_chart":
+                if x_col and y_col and x_col in chart_data.columns and y_col in chart_data.columns:
+                    # For line charts, sort by x column and create a simple DataFrame
+                    chart_data = chart_data.sort_values(x_col)
+                    display_data = chart_data[[x_col, y_col]].set_index(x_col)
+                    st.line_chart(display_data, use_container_width=True)
+                    
+            elif chart_type == "bar_chart":
+                if x_col and y_col and x_col in chart_data.columns and y_col in chart_data.columns:
+                    # Group and aggregate for bar chart
+                    display_data = chart_data.groupby(x_col)[y_col].sum().reset_index().set_index(x_col)
+                    st.bar_chart(display_data, use_container_width=True)
+                    
+            elif chart_type == "area_chart":
+                if x_col and y_col and x_col in chart_data.columns and y_col in chart_data.columns:
+                    chart_data = chart_data.sort_values(x_col)
+                    display_data = chart_data[[x_col, y_col]].set_index(x_col)
+                    st.area_chart(display_data, use_container_width=True)
+                    
+            elif chart_type == "scatter_chart":
+                if x_col and y_col and x_col in chart_data.columns and y_col in chart_data.columns:
+                    st.scatter_chart(chart_data, x=x_col, y=y_col, color=color_col, use_container_width=True)
+                    
+            else:
+                st.error(f"Unsupported chart type: {chart_type}")
+                return False
+            
+            if viz_config.get("reasoning"):
+                st.caption(f"💡 {viz_config['reasoning']}")
+                
+            return True
+            
+        except Exception as e:
+            st.error(f"Error rendering chart: {str(e)}")
+            st.write(f"Debug - Exception details: {e}")
+            return False
 
 def main():
     """Main Streamlit application"""
@@ -381,7 +634,7 @@ def main():
         )
         
         # Action buttons
-        col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 2])
+        col_btn1, col_btn2 = st.columns([1, 1])
         
         with col_btn1:
             generate_sql = st.button("🔄 Generate SQL", type="primary")
@@ -425,6 +678,7 @@ def main():
                 else:
                     st.warning("Query executed but returned no results.")
         
+        
         # Display results
         if 'query_results' in st.session_state:
             df = st.session_state['query_results']
@@ -435,21 +689,127 @@ def main():
             formatted_df = app.format_dataframe_for_display(df.copy())
             st.dataframe(formatted_df, use_container_width=True)
             
-            # Download button
-            csv = df.to_csv(index=False)
-            st.download_button(
-                label="📥 Download CSV",
-                data=csv,
-                file_name=f"nfl_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                mime="text/csv"
-            )
+            # Action buttons for results
+            col_action1, col_action2, col_action3 = st.columns([1, 1, 2])
             
-            # Generate insights
+            with col_action1:
+                # Download button
+                csv = df.to_csv(index=False)
+                st.download_button(
+                    label="📥 Download CSV",
+                    data=csv,
+                    file_name=f"nfl_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    mime="text/csv"
+                )
+            
+            with col_action2:
+                generate_viz = st.button("📊 Generate Visual")
+            
+            # Generate visualization
+            if generate_viz:
+                # Smart chart selection based on data structure (no API call needed)
+                viz_config = app.smart_chart_selection(df)
+                
+                if 'error' in viz_config:
+                    st.error(viz_config['error'])
+                else:
+                    st.session_state['viz_config'] = viz_config
+                    st.success("Chart configuration ready!")
+            
+            # Display visualization if generated
+            if 'viz_config' in st.session_state:
+                st.subheader("📊 Data Visualization")
+                
+                viz_config = st.session_state['viz_config']
+                
+                # Show the configuration
+                with st.expander("View Visualization Configuration"):
+                    st.json(viz_config)
+                
+                # Allow manual adjustment
+                col_viz1, col_viz2 = st.columns(2)
+                
+                with col_viz1:
+                    chart_types = ["line_chart", "bar_chart", "area_chart", "scatter_chart"]
+                    selected_chart_type = st.selectbox(
+                        "Chart Type:",
+                        chart_types,
+                        index=chart_types.index(viz_config.get("chart_type", "bar_chart"))
+                    )
+                    
+                    x_column = st.selectbox(
+                        "X-axis Column:",
+                        df.columns.tolist(),
+                        index=df.columns.tolist().index(viz_config.get("x_column", df.columns[0])) if viz_config.get("x_column") in df.columns else 0
+                    )
+                
+                with col_viz2:
+                    # Get numeric columns with more flexible detection
+                    numeric_cols = df.select_dtypes(include=['int64', 'float64', 'int32', 'float32', 'number']).columns.tolist()
+                    
+                    # If no numeric columns found, try to convert some columns
+                    if not numeric_cols:
+                        for col in df.columns:
+                            try:
+                                # Try to convert to numeric, excluding obvious text columns
+                                if not col.lower() in ['team_name', 'bookmaker_title', 'status'] and df[col].dtype == 'object':
+                                    pd.to_numeric(df[col], errors='raise')
+                                    numeric_cols.append(col)
+                            except:
+                                pass
+                    
+                    # If still no numeric columns, use all columns as fallback
+                    if not numeric_cols:
+                        numeric_cols = df.columns.tolist()
+                        st.warning("⚠️ No numeric columns detected. Showing all columns.")
+                    
+                    st.write(f"📊 Available numeric columns: {numeric_cols}")
+                    
+                    y_column = st.selectbox(
+                        "Y-axis Column:",
+                        numeric_cols,
+                        index=numeric_cols.index(viz_config.get("y_column", numeric_cols[0])) if viz_config.get("y_column") in numeric_cols and numeric_cols else 0
+                    )
+                    
+                    categorical_cols = ["None"] + df.select_dtypes(include=['object', 'category']).columns.tolist()
+                    color_column = st.selectbox(
+                        "Color Column (optional):",
+                        categorical_cols,
+                        index=categorical_cols.index(viz_config.get("color_column")) if viz_config.get("color_column") in categorical_cols else 0
+                    )
+                
+                # Update configuration
+                updated_config = {
+                    "chart_type": selected_chart_type,
+                    "x_column": x_column,
+                    "y_column": y_column,
+                    "color_column": color_column if color_column != "None" else None,
+                    "title": viz_config.get("title", "Chart"),
+                    "reasoning": viz_config.get("reasoning", "")
+                }
+                
+                # Render the chart
+                st.markdown("---")
+                success = app.render_streamlit_chart(df, updated_config)
+                
+                if success:
+                    st.session_state['current_viz_config'] = updated_config
+            
+            # Generate insights (only once per query)
             if app.claude and 'last_query' in st.session_state:
                 st.subheader("🧠 AI Insights")
-                with st.spinner("Generating insights..."):
-                    insights = app.generate_insights_with_claude(df, st.session_state['last_query'])
-                    st.markdown(insights)
+                
+                # Check if insights already exist for this query
+                current_query_hash = hash(st.session_state['last_query'] + str(df.shape))
+                
+                if 'insights' not in st.session_state or st.session_state.get('insights_query_hash') != current_query_hash:
+                    with st.spinner("Generating insights..."):
+                        insights = app.generate_insights_with_claude(df, st.session_state['last_query'])
+                        st.session_state['insights'] = insights
+                        st.session_state['insights_query_hash'] = current_query_hash
+                
+                # Display the stored insights
+                st.markdown(st.session_state['insights'])
     
     with col2:
         st.subheader("💡 Sample Queries")
