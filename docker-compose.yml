@@ -1,61 +1,18 @@
 version: '3.8'
 
 services:
-  postgres:
-    image: postgres:15
-    container_name: betting-postgres
-    environment:
-      POSTGRES_DB: betting_analytics
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./database/schema.sql:/docker-entrypoint-initdb.d/schema.sql
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d betting_analytics"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  app:
-    build: .
-    container_name: betting-app
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_NAME: betting_analytics
-      DB_USER: postgres
-      DB_PASSWORD: password
-      ODDS_API_KEY: ${ODDS_API_KEY:-your_odds_api_key_here}
-    volumes:
-      - .:/app
-    command: python3 test_db.py
-
-  # Streamlit app (for future use)
+  # Streamlit Application (connects to local PostgreSQL)
   streamlit:
     build: .
     container_name: betting-streamlit
-    depends_on:
-      postgres:
-        condition: service_healthy
     environment:
-      DB_HOST: postgres
+      DB_HOST: host.docker.internal  # Connect to host machine's PostgreSQL
       DB_PORT: 5432
       DB_NAME: betting_analytics
       DB_USER: postgres
-      DB_PASSWORD: password
+      DB_PASSWORD: ${DB_PASSWORD:-F1shF1sh&&}
+      CLAUDE_API_KEY: ${CLAUDE_API_KEY}
+      ODDS_API_KEY: ${ODDS_API_KEY}
     ports:
       - "8501:8501"
-    volumes:
-      - .:/app
-    command: streamlit run streamlit_app.py --server.address 0.0.0.0
-    profiles:
-      - streamlit
-
-volumes:
-  postgres_data:
+    restart: unless-stopped

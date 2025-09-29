@@ -1,0 +1,25 @@
+# Sports Betting Analytics Cron Jobs
+# 
+# Current odds every 15 minutes during active hours (9 AM - 11 PM EST)
+*/15 9-23 * * * root cd /app && python3 fetch_nfl_spreads.py >> /app/logs/current_odds.log 2>&1
+
+# Game results every hour
+0 * * * * root cd /app && python3 fetch_nfl_scores.py --season 2024 >> /app/logs/game_results.log 2>&1
+
+# Historical snapshots every 6 hours during season (Sep-Feb)
+0 */6 * 9-2 * root cd /app && python3 fetch_historical_spreads.py --interval 6 --bookmakers "draftkings,fanduel" >> /app/logs/historical.log 2>&1
+
+# Basketball odds during season (Oct-Apr)
+*/15 9-23 * 10-4 * root cd /app && python3 fetch_nba_spreads.py >> /app/logs/nba_odds.log 2>&1
+
+# College basketball during season (Nov-Mar)
+*/15 9-23 * 11-3 * root cd /app && python3 fetch_ncaab_spreads.py >> /app/logs/ncaab_odds.log 2>&1
+
+# Database cleanup at 2 AM daily
+0 2 * * * root cd /app && python3 scripts/cleanup_old_data.py >> /app/logs/cleanup.log 2>&1
+
+# Health check every 30 minutes
+*/30 * * * * root cd /app && python3 scripts/health_check.py >> /app/logs/health.log 2>&1
+
+# Log rotation at midnight
+0 0 * * * root cd /app && find /app/logs -name "*.log" -size +10M -exec gzip {} \; >> /app/logs/maintenance.log 2>&1

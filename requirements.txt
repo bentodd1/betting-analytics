@@ -1,0 +1,11 @@
+# Core dependencies for Sports Betting Analytics Platform
+streamlit>=1.29.0
+pandas>=2.1.0
+psycopg2-binary>=2.9.0
+anthropic>=0.34.0
+python-dotenv>=1.0.0
+requests>=2.31.0
+
+# Additional dependencies  
+numpy>=1.26.0
+plotly>=5.17.0

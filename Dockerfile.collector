@@ -1,0 +1,55 @@
+# Dockerfile for Data Collection Service
+FROM python:3.11-slim
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    postgresql-client \
+    cron \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements and install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY . .
+
+# Create logs directory
+RUN mkdir -p /app/logs
+
+# Create cron jobs
+COPY scripts/crontab /etc/cron.d/betting-jobs
+RUN chmod 0644 /etc/cron.d/betting-jobs
+RUN touch /var/log/cron.log
+
+# Create non-root user but keep root for cron
+RUN useradd -m -u 1000 collector
+
+# Set environment variables
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+
+# Create startup script
+RUN echo '#!/bin/bash\n\
+# Install cron jobs from file\n\
+crontab /etc/cron.d/betting-jobs\n\
+\n\
+# Start cron in background\n\
+cron\n\
+\n\
+# Create initial log files\n\
+touch /app/logs/current_odds.log\n\
+touch /app/logs/game_results.log\n\
+touch /app/logs/historical.log\n\
+\n\
+# Keep container running and show logs\n\
+tail -f /app/logs/*.log /var/log/cron.log' > /app/start.sh
+
+RUN chmod +x /app/start.sh
+
+# Run startup script
+CMD ["/app/start.sh"]
